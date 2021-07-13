@@ -1,0 +1,102 @@
+
+############## Installing GCSFUSE #######################
+export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`
+echo "deb http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+sudo apt-get update
+sudo apt-get install gcsfuse
+sudo usermod -a -G fuse $USER
+exit
+
+
+############## Mounting Bucket #######################
+mkdir sqoop-data
+gcsfuse dataproc-220161 sqoop-data
+
+
+############## Setting MYSQL Root Password #######################
+sudo /etc/init.d/mysql stop
+sudo -s
+mkdir -p /var/run/mysqld
+sudo chown mysql:mysql /var/run/mysqld
+mysqld_safe --skip-grant-tables & 
+mysql -u root
+
+use mysql;
+update user set authentication_string=PASSWORD("admin123") where user='root';
+update user set plugin= "mysql_native_password" where user='root';
+flush privileges;
+quit;
+
+/etc/init.d/mysql stop
+/etc/init.d/mysql start
+exit;
+
+############## Setup Retail Database in MYSQL #######################
+mysql -uroot -padmin123
+create database retail_db;
+use retail_db;
+source ~/sqoop-data/retail_db.sql;
+exit;
+
+############### Installing Sqoop ##############################
+cd ~
+wget https://archive.apache.org/dist/sqoop/1.4.6/sqoop-1.4.6.bin__hadoop-2.0.4-alpha.tar.gz
+tar -xvf sqoop-1.4.6.bin__hadoop-2.0.4-alpha.tar.gz
+echo export SQOOP_HOME=~/sqoop-1.4.6.bin__hadoop-2.0.4-alpha export PATH=$PATH:$SQOOP_HOME/bin>~/.bashrc
+source ~/.bashrc
+
+
+wget http://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-5.1.30.tar.gz
+tar -xvf mysql-connector-java-5.1.30.tar.gz
+sudo mv mysql-connector-java-5.1.30/mysql-connector-java-5.1.30-bin.jar /$SQOOP_HOME/lib
+
+cd $SQOOP_HOME/conf
+mv sqoop-env-template.sh sqoop-env.sh
+echo export HADOOP_COMMON_HOME=/usr/lib/hadoop > sqoop-env.sh
+echo export HADOOP_MAPRED_HOME=/usr/lib/hadoop-mapreduce > sqoop-env.sh
+echo export SQOOP_HOME=~/sqoop-1.4.6.bin__hadoop-2.0.4-alpha export PATH=$PATH:$SQOOP_HOME/bin>~/.bashrc
+source ~/.bashrc
+
+
+
+sqoop import --connect jdbc:mysql://localhost/retail_db --username root --password admin123 --table customers
+
+
+#######Connecting to Hive Beeline ################################
+
+beeline -u jdbc:hive2://localhost:10000/default -n pbhagavanreddy@bigdata-cluster -d org.apache.hive.jdbc.HiveDriver
+
+
+##############Sqoop Hive Integration ##############################
+cp /etc/hive/conf/hive-site.xml $SQOOP_HOME/conf
+cd $SQOOP_HOME/conf
+sudo nano hive-site.xml
+ <property>
+    <name>hive.execution.engine</name>
+    <value>tez</value>
+  </property>
+Change property value to mr & save
+source ~/.bashrc
+
+
+
+########Installing Flume #######################################
+cd ~
+wget https://downloads.apache.org/flume/1.6.0/apache-flume-1.6.0-bin.tar.gz
+tar xzf apache-flume-1.6.0-bin.tar.gz
+
+export FLUME_HOME=~/apache-flume-1.6.0-bin/
+export export PATH=$PATH:$FLUME_HOME/bin
+source ~/.bashrc
+
+
+flume-ng version
+
+###### Restart mysql ###################
+sudo pkill mysql
+sudo pkill mysqld
+sudo /etc/init.d/mysql restart
+
+
+
